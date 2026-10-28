@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Emergency Response Stack Simulator</title>
+  <style>
+    :root { --bg:#08111f; --panel:#111d31; --panel2:#182941; --line:#2d4564; --text:#e7f0fb; --muted:#91a7c2; --cyan:#38bdf8; --lime:#a3e635; --amber:#fbbf24; --red:#fb7185; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; color:var(--text); background:radial-gradient(circle at 80% 0,#164e63 0,transparent 32%),var(--bg); font-family:Inter,system-ui,sans-serif; }
+    .app { width:min(1180px,94vw); margin:auto; padding:32px 0 44px; }
+    .eyebrow { color:var(--cyan); font-size:.75rem; font-weight:900; letter-spacing:.15em; text-transform:uppercase; }
+    h1 { font-size:clamp(2rem,4.5vw,3.5rem); line-height:1.03; margin:9px 0; max-width:800px; }
+    .intro { color:var(--muted); max-width:780px; line-height:1.6; margin:0 0 25px; }
+    .layout { display:grid; grid-template-columns:1.15fr .85fr; gap:20px; }
+    .panel { background:rgba(17,29,49,.93); border:1px solid var(--line); border-radius:20px; padding:21px; box-shadow:0 18px 45px #0004; }
+    .panel h2 { font-size:1.05rem; margin:0 0 15px; }
+    .scene { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:17px; }
+    .room { min-height:88px; border:1px solid var(--line); border-radius:13px; background:var(--panel2); padding:10px; position:relative; transition:.2s; }
+    .room.active { border-color:var(--lime); box-shadow:0 0 0 2px #a3e63533; transform:translateY(-2px); }
+    .room small { display:block; color:var(--muted); font-size:.7rem; margin-bottom:7px; }
+    .room strong { font-size:.85rem; }
+    .marker { position:absolute; right:9px; top:9px; width:9px; height:9px; border-radius:50%; background:var(--red); box-shadow:0 0 12px var(--red); }
+    .room.active .marker { background:var(--lime); box-shadow:0 0 12px var(--lime); }
+    .incident { border:1px solid #92400e; background:#451a0338; border-radius:13px; padding:14px; margin-bottom:15px; }
+    .incident b { color:var(--amber); }
+    .choices { display:grid; gap:10px; }
+    button { border:0; border-radius:10px; padding:12px 14px; text-align:left; color:var(--text); background:#203957; border:1px solid #3b5b7d; font-weight:800; cursor:pointer; transition:.15s; }
+    button:hover:not(:disabled) { transform:translateY(-1px); border-color:var(--cyan); background:#27476b; }
+    button:disabled { opacity:.4; cursor:not-allowed; }
+    button.backtrack { margin-top:13px; width:100%; color:#1f1300; background:var(--amber); border-color:var(--amber); text-align:center; }
+    button.reset { margin-top:9px; width:100%; background:transparent; text-align:center; }
+    .stack { min-height:360px; display:flex; flex-direction:column; }
+    .stack-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+    .count { background:var(--cyan); color:#052235; padding:4px 9px; border-radius:999px; font-weight:900; font-size:.78rem; }
+    .frames { display:flex; flex-direction:column-reverse; gap:8px; flex:1; }
+    .frame { border:1px solid var(--line); border-left:4px solid var(--cyan); border-radius:10px; padding:11px; background:#0c1729; animation:in .2s ease-out; }
+    .frame.top { border-left-color:var(--amber); box-shadow:0 0 0 1px #fbbf2430; }
+    .frame small { display:block; color:var(--muted); margin-top:4px; line-height:1.4; }
+    .empty { color:#6d829d; text-align:center; padding:30px 10px; margin:auto 0; }
+    .log { margin-top:16px; border-top:1px solid var(--line); padding-top:13px; color:var(--muted); font-size:.84rem; line-height:1.55; }
+    .log strong { color:var(--lime); }
+    .why { margin-top:20px; display:grid; grid-template-columns:repeat(3,1fr); gap:11px; }
+    .why article { background:#0e1a2d; border:1px solid var(--line); border-radius:13px; padding:14px; }
+    .why b { color:var(--cyan); font-size:.78rem; }
+    .why h3 { font-size:.95rem; margin:6px 0; }
+    .why p { color:var(--muted); font-size:.84rem; line-height:1.5; margin:0; }
+    @keyframes in { from {opacity:0; transform:translateY(5px)} to {opacity:1; transform:none} }
+    @media(max-width:850px){ .layout{grid-template-columns:1fr} }
+    @media(max-width:560px){ .scene,.why{grid-template-columns:1fr 1fr} }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <div class="eyebrow">Stack data structure · real-world simulation</div>
+    <h1>Emergency response: backtrack the latest decision</h1>
+    <p class="intro">Responders often explore a route one decision at a time. A stack preserves those decisions in order, so the team can return to the most recent unresolved choice and try an alternative.</p>
+
+    <section class="layout">
+      <div class="panel">
+        <h2 id="locationTitle">Incident command · choose an action</h2>
+        <div class="scene" id="scene"></div>
+        <div class="incident"><b>Situation:</b> <span id="situation">Smoke is reported near the east corridor. Choose where the team should go next.</span></div>
+        <div class="choices" id="choices"></div>
+        <button class="backtrack" id="backtrack">↩ Backtrack to the latest decision</button>
+        <button class="reset" id="reset">Reset simulation</button>
+        <div class="log" id="log"><strong>System:</strong> The decision stack is empty. Select an action to begin.</div>
+      </div>
+
+      <div class="panel stack">
+        <div class="stack-head"><h2>Decision stack</h2><span class="count" id="count">0 checkpoints</span></div>
+        <div class="frames" id="frames"></div>
+        <div class="log"><strong>Top of stack:</strong> the latest checkpoint. Backtrack pops it first.</div>
+      </div>
+    </section>
+
+    <section class="why">
+      <article><b>PUSH</b><h3>Save the choice</h3><p>Every route decision becomes a checkpoint before the team moves deeper into the incident.</p></article>
+      <article><b>POP</b><h3>Undo the latest move</h3><p>Backtracking removes the newest checkpoint, returning responders to the last place with an alternative.</p></article>
+      <article><b>LIFO</b><h3>Protect the correct order</h3><p>The newest decision must be revisited before older decisions, just like nested work in software.</p></article>
+    </section>
+  </main>
+
+  <script>
+    class Stack {
+      constructor() { this.items = []; }
+      push(item) { this.items.push(item); }
+      pop() { return this.items.pop(); }
+      peek() { return this.items[this.items.length - 1]; }
+      clear() { this.items = []; }
+      get size() { return this.items.length; }
+    }
+
+    const rooms = ['Command', 'West hall', 'East hall', 'Medical'];
+    const routes = {
+      Command: {
+        situation: 'Smoke is reported near the east corridor. Choose where the team should go next.',
+        choices: [['East hall', 'Investigate the reported smoke source.'], ['West hall', 'Check an alternate access route.']]
+      },
+      'East hall': {
+        situation: 'Visibility is low and two doors are available. Which branch should the team test?',
+        choices: [['Medical', 'Move toward the medical staging area.'], ['West hall', 'Fall back to the west route and check for another entrance.']]
+      },
+      'West hall': {
+        situation: 'The west route is partially blocked. Choose how to continue the search.',
+        choices: [['Medical', 'Use the marked passage toward medical staging.'], ['East hall', 'Cross back toward the east corridor.']]
+      },
+      Medical: {
+        situation: 'The team reaches the medical staging area. The simulated route is complete.',
+        choices: []
+      }
+    };
+
+    const stack = new Stack();
+    let current = 'Command';
+    let routeComplete = false;
+    const scene = document.getElementById('scene');
+    const choices = document.getElementById('choices');
+    const frames = document.getElementById('frames');
+    const count = document.getElementById('count');
+    const situation = document.getElementById('situation');
+    const locationTitle = document.getElementById('locationTitle');
+    const log = document.getElementById('log');
+    const backtrack = document.getElementById('backtrack');
+
+    function drawScene() {
+      scene.innerHTML = rooms.map(room => `<div class="room ${room === current ? 'active' : ''}"><span class="marker"></span><small>ZONE</small><strong>${room}</strong></div>`).join('');
+    }
+
+    function drawStack() {
+      count.textContent = `${stack.size} checkpoint${stack.size === 1 ? '' : 's'}`;
+      frames.innerHTML = stack.size ? stack.items.map((item, i) => `<div class="frame ${i === stack.size - 1 ? 'top' : ''}"><b>${i === stack.size - 1 ? 'TOP · ' : ''}${item.from} → ${item.to}</b><small>${item.reason}</small></div>`).join('') : '<div class="empty">No decisions saved yet.<br>Choose a route to push a checkpoint.</div>';
+      backtrack.disabled = stack.size === 0;
+    }
+
+    function drawChoices() {
+      const route = routes[current];
+      locationTitle.textContent = `${current} · choose an action`;
+      situation.textContent = route.situation;
+      choices.innerHTML = route.choices.length ? route.choices.map(([to, reason]) => `<button data-to="${to}" data-reason="${reason}">Move to ${to}<br><small>${reason}</small></button>`).join('') : '<button disabled>Route complete — backtrack to try another branch</button>';
+      choices.querySelectorAll('button[data-to]').forEach(button => button.addEventListener('click', () => move(button.dataset.to, button.dataset.reason)));
+    }
+
+    function move(to, reason) {
+      stack.push({ from: current, to, reason });
+      current = to;
+      routeComplete = current === 'Medical';
+      log.innerHTML = `<strong>Push:</strong> saved ${stack.peek().from} → ${stack.peek().to}. The newest decision is now on top.`;
+      draw();
+    }
+
+    function undoDecision() {
+      const checkpoint = stack.pop();
+      current = checkpoint.from;
+      routeComplete = false;
+      log.innerHTML = `<strong>Pop:</strong> removed ${checkpoint.from} → ${checkpoint.to}. The team returned to the latest decision point.`;
+      draw();
+    }
+
+    function reset() {
+      stack.clear(); current = 'Command'; routeComplete = false;
+      log.innerHTML = '<strong>System:</strong> The decision stack is empty. Select an action to begin.';
+      draw();
+    }
+
+    function draw() { drawScene(); drawStack(); drawChoices(); }
+    backtrack.addEventListener('click', undoDecision);
+    document.getElementById('reset').addEventListener('click', reset);
+    draw();
+  </script>
+</body>
+</html>
